@@ -52,7 +52,10 @@ GRADE_TIMEOUT = int(os.getenv("EVAL_GRADE_TIMEOUT", "600"))
 REPO_ROOT = "/repo"
 REGRESSION_TEST_COMMAND = "python -m pytest -x -q --tb=short 2>&1"
 # Capped so one instance with 300 PASS_TO_PASS ids cannot dominate a run.
-MAX_GRADED_TESTS = int(os.getenv("EVAL_MAX_GRADED_TESTS", "20"))
+# Off by default (0 = grade every id): a cap means a patch that breaks the 21st
+# PASS_TO_PASS test still scores as resolved (tests/test_grading_exact.py), and
+# SWE-bench's criterion is ALL of them. Set it only for quick, unpublished runs.
+MAX_GRADED_TESTS = int(os.getenv("EVAL_MAX_GRADED_TESTS", "0"))
 
 
 @dataclass
@@ -233,25 +236,78 @@ def build_test_command(instance: dict) -> str:
     No --timeout flag: that needs pytest-timeout, which target repos rarely
     install, and an unrecognised argument is another silent exit 4. Hangs are
     caught by the workspace's own deadline.
+
+    `-k` is a substring match, so it selects a superset of the named tests.
+    That is fine for *selection* only: the verdict is taken per test id, by
+    exact match, from the `-rA` summary (see `outcomes_resolve`). No `-x`, so
+    every selected test runs and reports.
     """
     node_ids, bare = [], []
-    for test_id in _test_ids(instance, "FAIL_TO_PASS") + _test_ids(instance, "PASS_TO_PASS"):
+    for test_id in _graded_ids(instance):
         (node_ids if "::" in test_id else bare).append(test_id)
 
-    if node_ids:
-        spec = " ".join(f'"{t}"' for t in node_ids[:MAX_GRADED_TESTS])
-        return f"python -m pytest {spec} -x -q --tb=short 2>&1"
+    if node_ids and not bare:
+        spec = " ".join(f'"{t}"' for t in node_ids)
+        return f"python -m pytest {spec} -rA -q --tb=short 2>&1"
 
     if bare:
         # Django's "test_x (module.Class)" reduces to the method name, which -k
         # matches; the parenthesised path is not a pytest selector.
-        names = [t.split(" ")[0] for t in bare[:MAX_GRADED_TESTS]]
+        names = [t.split(" ")[0] for t in bare] + [t.split("::")[-1] for t in node_ids]
         selector = " or ".join(dict.fromkeys(names))
         files = " ".join(_patched_test_files(instance))
         scope = files or "."
-        return f'python -m pytest {scope} -k "{selector}" -x -q --tb=short 2>&1'
+        return f'python -m pytest {scope} -k "{selector}" -rA -q --tb=short 2>&1'
 
     return REGRESSION_TEST_COMMAND
+
+
+def _graded_ids(instance: dict) -> list[str]:
+    ids = _test_ids(instance, "FAIL_TO_PASS") + _test_ids(instance, "PASS_TO_PASS")
+    return ids[:MAX_GRADED_TESTS] if MAX_GRADED_TESTS > 0 else ids
+
+
+_OUTCOME_LINE = re.compile(r"^(PASSED|FAILED|ERROR|XFAIL|XPASS) (.+?)(?: - .*)?$", re.MULTILINE)
+
+
+def parse_pytest_outcomes(output: str) -> dict[str, str]:
+    """Node id -> outcome, from pytest's `-rA` short test summary."""
+    outcomes: dict[str, str] = {}
+    for status, node in _OUTCOME_LINE.findall(output):
+        outcomes[node.strip()] = status
+    return outcomes
+
+
+def _id_passed(test_id: str, outcomes: dict[str, str]) -> bool:
+    """
+    Exact match of one SWE-bench test id against pytest outcomes.
+
+    A node id must appear verbatim. A bare name (sympy) or unittest label
+    (django, "test_x (module.Class)") must equal the last component of a node
+    id - and, for a label, its class must equal the component before it. Every
+    matching node must pass, and at least one must exist: a test that never ran
+    is not a test that passed.
+    """
+    if "::" in test_id:
+        return outcomes.get(test_id) == "PASSED"
+    name, _, label = test_id.partition(" ")
+    cls = label.strip("()").split(".")[-1] if label else None
+    matches = []
+    for node, status in outcomes.items():
+        parts = node.split("::")
+        if parts[-1] != name:
+            continue
+        if cls is not None and (len(parts) < 3 or parts[-2] != cls):
+            continue
+        matches.append(status)
+    return bool(matches) and all(status == "PASSED" for status in matches)
+
+
+def outcomes_resolve(instance: dict, output: str) -> bool:
+    """True iff every graded FAIL_TO_PASS and PASS_TO_PASS id passed, exactly."""
+    ids = _graded_ids(instance)
+    outcomes = parse_pytest_outcomes(output)
+    return bool(ids) and all(_id_passed(t, outcomes) for t in ids)
 
 
 def apply_test_patch(workspace, instance: dict) -> bool:
@@ -282,16 +338,22 @@ def grade(workspace, instance: dict, diff: str) -> bool:
     Decide whether an instance was resolved.
 
     This is the in-harness proxy, not the official grader: it applies the test
-    patch and runs the FAIL_TO_PASS / PASS_TO_PASS ids the instance names,
-    capped at 20 tests. The official swebench grader re-runs the full sets in
-    their own images; treat these numbers as indicative and say so wherever
-    they are published.
+    patch and runs the FAIL_TO_PASS / PASS_TO_PASS ids the instance names.
+    (It used to cap that at 20 tests and trust pytest's exit status over a
+    substring `-k` selection; both made verdicts wrong - see
+    tests/test_grading_exact.py.) The official swebench grader re-runs the full
+    sets in their own images (eval_sop/grader.py uses its test specs and log
+    parsers); treat these numbers as indicative and say so wherever they are
+    published.
     """
     if not diff or not diff.strip():
         return False
     if not apply_test_patch(workspace, instance):
         return False
-    return workspace.run(build_test_command(instance), timeout=GRADE_TIMEOUT).success
+    result = workspace.run(build_test_command(instance), timeout=GRADE_TIMEOUT)
+    if not _graded_ids(instance):
+        return result.success  # nothing named to match; fall back to exit status
+    return outcomes_resolve(instance, result.output)
 
 
 def run_instance_agent(

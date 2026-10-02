@@ -53,6 +53,7 @@ from agentless.pipeline import run_agentless  # noqa: E402
 from eval.harness import (  # noqa: E402
     apply_test_patch,
     build_test_command,
+    outcomes_resolve,
     load_difficulty_labels,
     load_instance,
 )
@@ -281,22 +282,32 @@ def grade_recorded_run(workspace, instance: dict, pytest_args: str) -> dict:
 
     command = build_test_command(instance)
     if pytest_args:
-        command = command.replace("-x -q", f"-x -q {pytest_args}")
+        # build_test_command emits "-rA -q" (exact per-id grading); the
+        # fallback regression command still uses "-x -q".
+        for flags in ("-rA -q", "-x -q"):
+            if flags in command:
+                command = command.replace(flags, f"{flags} {pytest_args}", 1)
+                break
 
     result = workspace.run(command, timeout=1800)
     fail_to_pass = json.loads(instance.get("FAIL_TO_PASS") or "[]")
     pass_to_pass = json.loads(instance.get("PASS_TO_PASS") or "[]")
+    resolved = (
+        outcomes_resolve(instance, result.output)
+        if fail_to_pass or pass_to_pass
+        else result.success
+    )
 
-    print(f"  exit {result.exit_code} - {'RESOLVED' if result.success else 'not resolved'}")
+    print(f"  exit {result.exit_code} - {'RESOLVED' if resolved else 'not resolved'}")
     return {
         "graded": True,
-        "resolved": result.success,
+        "resolved": resolved,
         "command": command,
         "exitCode": result.exit_code,
         "timedOut": result.timed_out,
         "failToPassCount": len(fail_to_pass),
         "passToPassCount": len(pass_to_pass),
-        "testsRun": min(len(fail_to_pass) + len(pass_to_pass), 20),
+        "testsRun": len(fail_to_pass) + len(pass_to_pass),
         "output": result.output[-6000:],
     }
 
