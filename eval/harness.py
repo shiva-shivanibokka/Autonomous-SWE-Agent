@@ -51,6 +51,12 @@ EVAL_INSTANCE_LIMIT = int(os.getenv("EVAL_INSTANCE_LIMIT", "300"))
 GRADE_TIMEOUT = int(os.getenv("EVAL_GRADE_TIMEOUT", "600"))
 REPO_ROOT = "/repo"
 REGRESSION_TEST_COMMAND = "python -m pytest -x -q --tb=short 2>&1"
+# The agentless gate compares pass/fail counts with an unpatched baseline, so
+# it must not use -x: on a repo with one pre-existing red test both runs stop
+# there, and a candidate that breaks a later test looks identical to the
+# baseline (tests/test_agentless_gate.py). `{scope}` is the test directory
+# nearest the patched file - the same default eval/record_run.py already uses.
+AGENTLESS_VALIDATE_COMMAND = "python -m pytest {scope} -q --tb=no 2>&1"
 # Capped so one instance with 300 PASS_TO_PASS ids cannot dominate a run.
 # Off by default (0 = grade every id): a cap means a patch that breaks the 21st
 # PASS_TO_PASS test still scores as resolved (tests/test_grading_exact.py), and
@@ -453,7 +459,7 @@ def run_instance_agentless(
                     workspace,
                     issue_text,
                     llm,
-                    test_command=REGRESSION_TEST_COMMAND,
+                    test_command=AGENTLESS_VALIDATE_COMMAND,
                 )
                 diff = workspace.get_diff()
                 resolved = grade(workspace, instance, diff)
