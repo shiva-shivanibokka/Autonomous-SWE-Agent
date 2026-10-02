@@ -53,9 +53,9 @@ from agentless.pipeline import run_agentless  # noqa: E402
 from eval.harness import (  # noqa: E402
     apply_test_patch,
     build_test_command,
-    outcomes_resolve,
     load_difficulty_labels,
     load_instance,
+    outcomes_resolve,
 )
 from sandbox import create_workspace  # noqa: E402
 
