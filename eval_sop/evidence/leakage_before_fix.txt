@@ -1,0 +1,8 @@
+HEAD           : 7a0aeba (base)
+git remote -v  : origin	file:///C:/Users/<user>/AppData/Local/Temp/tmpyhzeh3tf/up (fetch) [blob:none]
+origin	file:///C:/Users/<user>/AppData/Local/Temp/tmpyhzeh3tf/up (push)
+git log --all  :
+0ef31c7 (tag: v-after-fix, origin/main, origin/HEAD, main) the future fix
+7a0aeba (grafted, HEAD) base
+
+git show origin/main:mod.py -> return 2  # FUTURE FIX

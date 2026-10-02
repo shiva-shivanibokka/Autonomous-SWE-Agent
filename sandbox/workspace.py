@@ -107,29 +107,64 @@ def clone_repo(repo_url: str, commit_sha: str, dest: str) -> None:
     routinely years deep — so a shallow checkout of the target commit fails on
     most instances. Fetch the exact commit instead, and only fall back to
     deepening the whole history if the server refuses single-commit fetches.
+
+    The checkout must also contain nothing from *after* that commit. SWE-bench
+    grades against the fix the maintainers merged later; an ordinary clone keeps
+    the `origin` remote, its branch tips and tags, so `git log --all -p` hands
+    the agent that fix. So the commit is fetched by URL into an empty repository
+    (no remote is ever configured, no tags are fetched), and whichever path was
+    taken, every ref, reflog entry and unreachable object that could lead past
+    the base commit is removed before the agent sees the directory.
+    tests/test_leakage.py proves the future commit is unreachable.
     """
+    os.makedirs(dest, exist_ok=True)
     run = _git_runner(dest)
 
-    result = subprocess.run(
-        ["git", "clone", "--filter=blob:none", "--no-checkout", repo_url, dest],
-        capture_output=True,
-        text=True,
-        timeout=CLONE_TIMEOUT,
-    )
-    if result.returncode != 0:
-        raise SandboxError(f"Failed to clone {repo_url}: {result.stderr.strip()}")
+    init = run("init", "-q")
+    if init.returncode != 0:
+        raise SandboxError(f"git init failed in {dest}: {init.stderr.strip()}")
 
-    if commit_sha and commit_sha != "HEAD":
-        fetched = run("fetch", "--depth=1", "origin", commit_sha)
-        if fetched.returncode != 0:
-            # Server disallows fetching an arbitrary SHA; take the full history.
-            run("fetch", "--unshallow")
+    target = commit_sha if commit_sha and commit_sha != "HEAD" else "HEAD"
+    fetched = run("fetch", "-q", "--depth=1", "--no-tags", repo_url, target)
+    if fetched.returncode == 0:
+        checkout_ref = "FETCH_HEAD"
+    else:
+        # Server disallows fetching an arbitrary SHA; take the full history into
+        # a scratch namespace, check out the commit, then cut the rest away.
+        full = run("fetch", "-q", "--no-tags", repo_url, "+refs/heads/*:refs/sweagent-tmp/*")
+        if full.returncode != 0:
+            raise SandboxError(f"Failed to clone {repo_url}: {full.stderr.strip()}")
+        checkout_ref = target
 
-    checkout = run("checkout", "--force", commit_sha or "HEAD")
+    checkout = run("checkout", "-q", "--force", "--detach", checkout_ref)
     if checkout.returncode != 0:
         raise SandboxError(
             f"Failed to check out {commit_sha!r} in {repo_url}: {checkout.stderr.strip()}"
         )
+    strip_future_history(dest)
+
+
+def strip_future_history(dest: str) -> None:
+    """
+    Leave only HEAD (the base commit) and its ancestors in `dest`'s repository.
+
+    Deletes the remote (if any), every ref, FETCH_HEAD / ORIG_HEAD (which can
+    name fetched branch tips), all reflogs, and then prunes every object that is
+    no longer reachable from HEAD.
+    """
+    run = _git_runner(dest)
+    for remote in run("remote").stdout.split():
+        run("remote", "remove", remote)
+    for ref in run("for-each-ref", "--format=%(refname)").stdout.split():
+        run("update-ref", "-d", ref)
+    for name in ("FETCH_HEAD", "ORIG_HEAD"):
+        path = os.path.join(dest, ".git", name)
+        if os.path.exists(path):
+            os.remove(path)
+    run("reflog", "expire", "--expire=now", "--all")
+    gc = run("gc", "-q", "--prune=now")
+    if gc.returncode != 0:
+        raise SandboxError(f"git gc failed while stripping history: {gc.stderr.strip()}")
 
 
 def _git_runner(cwd: str):
