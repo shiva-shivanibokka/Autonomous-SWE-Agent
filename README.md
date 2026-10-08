@@ -57,6 +57,18 @@ than guessed at.
 **Agentic: 3 of 4. Agentless: 2 of 4.**
 $1.06 for the set, `claude-sonnet-5` throughout.
 
+> **Evidence for the comparison being fair: [`eval_sop/evidence/`](eval_sop/evidence/).**
+> These four numbers are only worth reading because the harness was fixed first.
+> [`grading_repro.txt`](eval_sop/evidence/grading_repro.txt) reproduces three
+> grading defects against the pre-fix harness — only the first 20 PASS_TO_PASS
+> ids were ever run, and a bare `-k <name>` selected tests that merely *contained*
+> that name, so a run could be graded resolved on tests it never executed.
+> [`leakage_before_fix.txt`](eval_sop/evidence/leakage_before_fix.txt) and
+> [`leakage_after_fix.txt`](eval_sop/evidence/leakage_after_fix.txt) show the
+> workspace no longer carrying post-base history the agent could read the answer
+> from. Each is reproducible with
+> [`leakage_repro.py`](eval_sop/evidence/leakage_repro.py).
+
 Four issues cannot rank two architectures, and this is not offered as a ranking.
 What it does show is where they diverge, and the divergence is not the one the
 cost tables in either paper would lead you to expect.
