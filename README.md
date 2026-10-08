@@ -357,7 +357,7 @@ Autonomous-SWE-Agent/
 ## Testing
 
 ```bash
-pytest tests/          # 85 tests, fully mocked
+pytest tests/          # 105 tests, fully mocked
 ruff check .           # uses the rule set in pyproject.toml
 ```
 
