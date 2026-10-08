@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from agent.providers import litellm_model
+from agent.providers import KEYLESS_PROVIDERS, litellm_model
 
 # litellm is imported lazily inside complete() so this module (LLMConfig, the
 # tool converter, the dataclasses) imports without the heavy dep present — keeps
@@ -45,6 +45,13 @@ class LLMConfig:
     provider: str
     model: str
     api_key: str
+    # Reproducibility / local-model knobs. All optional, all default to the
+    # previous behaviour. `seed` is forwarded to providers that honour it
+    # (Ollama, OpenAI); `options` are extra LiteLLM kwargs such as Ollama's
+    # num_ctx, stored as a tuple of pairs so the config stays hashable.
+    seed: int | None = None
+    api_base: str | None = None
+    options: tuple[tuple[str, Any], ...] = ()
 
 
 @dataclass
@@ -94,7 +101,7 @@ def complete(
     max_tokens: int = 4096,
 ) -> LLMResponse:
     """Call the model once. Raises LLMError on any provider/auth/network failure."""
-    if not cfg.api_key:
+    if not cfg.api_key and cfg.provider not in KEYLESS_PROVIDERS:
         raise LLMError("No API key provided. This is a bring-your-own-key demo.")
 
     msgs = list(messages)
@@ -110,6 +117,12 @@ def complete(
     }
     if tools:
         kwargs["tools"] = to_openai_tools(tools)
+    if cfg.seed is not None:
+        kwargs["seed"] = cfg.seed
+    if cfg.api_base:
+        kwargs["api_base"] = cfg.api_base
+    for key, value in cfg.options:
+        kwargs[key] = value
 
     litellm = _get_litellm()
     try:

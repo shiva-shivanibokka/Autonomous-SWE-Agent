@@ -108,3 +108,50 @@ class TestLLMConfig:
         assert {cfg}  # hashable
         with pytest.raises((AttributeError, TypeError, dataclasses.FrozenInstanceError)):
             cfg.api_key = "changed"  # frozen
+
+
+class TestLocalProviderAndSeed:
+    """Plumbing added for the free, reproducible eval (eval_sop/)."""
+
+    def _fake_litellm(self, captured):
+        from types import SimpleNamespace
+
+        def completion(**kwargs):
+            captured.update(kwargs)
+            msg = SimpleNamespace(content="ok", tool_calls=None)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=msg, finish_reason="stop")],
+                usage=SimpleNamespace(prompt_tokens=3, completion_tokens=1),
+            )
+
+        return SimpleNamespace(completion=completion, completion_cost=lambda **_: 0.0)
+
+    def test_ollama_is_local_only(self):
+        from agent.providers import LOCAL_PROVIDERS
+
+        assert "ollama" not in PROVIDERS  # never offered in the hosted BYOK UI
+        assert "ollama" in LOCAL_PROVIDERS
+        assert litellm_model("ollama", "qwen2.5:7b") == "ollama_chat/qwen2.5:7b"
+
+    def test_seed_api_base_and_options_are_forwarded(self, monkeypatch):
+        import agent.llm as llm
+
+        captured: dict = {}
+        monkeypatch.setattr(llm, "_get_litellm", lambda: self._fake_litellm(captured))
+        cfg = LLMConfig(
+            "ollama", "qwen2.5:7b", "", seed=7, api_base="http://x:1", options=(("num_ctx", 8192),)
+        )
+        llm.complete(cfg, [{"role": "user", "content": "hi"}])
+        assert captured["seed"] == 7
+        assert captured["api_base"] == "http://x:1"
+        assert captured["num_ctx"] == 8192
+
+    def test_defaults_unchanged_for_byok_providers(self, monkeypatch):
+        import agent.llm as llm
+
+        captured: dict = {}
+        monkeypatch.setattr(llm, "_get_litellm", lambda: self._fake_litellm(captured))
+        llm.complete(LLMConfig("openai", "m", "k"), [{"role": "user", "content": "hi"}])
+        assert "seed" not in captured and "api_base" not in captured
+        with pytest.raises(llm.LLMError):
+            llm.complete(LLMConfig("openai", "m", ""), [{"role": "user", "content": "hi"}])

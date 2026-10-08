@@ -91,10 +91,32 @@ PROVIDERS: dict[str, Provider] = {
     ),
 }
 
+# Local, keyless inference servers. Deliberately NOT part of PROVIDERS: that
+# registry feeds the hosted UI's BYOK dropdowns, where a localhost model cannot
+# work. These are for local eval runs only (the free, reproducible evaluation in
+# eval_sop/ runs on Ollama).
+LOCAL_PROVIDERS: dict[str, Provider] = {
+    "ollama": Provider(
+        key="ollama",
+        label="Ollama (local)",
+        litellm_prefix="ollama_chat",
+        key_env="OLLAMA_API_KEY",
+        key_url="https://ollama.com/library",
+        models=(Model("qwen2.5:7b", "Qwen2.5 7B Instruct (Q4_K_M)"),),
+    ),
+}
+
+# Providers that run without an API key.
+KEYLESS_PROVIDERS = frozenset(LOCAL_PROVIDERS)
+
+
+def _lookup(provider: str) -> Provider | None:
+    return PROVIDERS.get(provider) or LOCAL_PROVIDERS.get(provider)
+
 
 def litellm_model(provider: str, model: str) -> str:
     """Build the LiteLLM model string, e.g. ('google', 'gemini-3.1-pro') -> 'gemini/gemini-3.1-pro'."""
-    p = PROVIDERS.get(provider)
+    p = _lookup(provider)
     if p is None:
         raise ValueError(f"Unknown provider {provider!r}. Options: {sorted(PROVIDERS)}")
     return f"{p.litellm_prefix}/{model}"
@@ -102,7 +124,7 @@ def litellm_model(provider: str, model: str) -> str:
 
 def key_env_for(provider: str) -> str:
     """Env var that holds an API key for this provider (used by local eval runs)."""
-    p = PROVIDERS.get(provider)
+    p = _lookup(provider)
     if p is None:
         raise ValueError(f"Unknown provider {provider!r}. Options: {sorted(PROVIDERS)}")
     return p.key_env

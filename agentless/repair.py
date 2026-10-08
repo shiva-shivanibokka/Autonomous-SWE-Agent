@@ -17,7 +17,7 @@ to select the best one, achieving 32% on SWE-bench Lite at $0.70/issue.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from agent.llm import LLMConfig, complete, extract_json
 from agentless.localize import LocalizationResult
@@ -104,6 +104,7 @@ def repair(
         candidates: list[PatchCandidate] = []
         rejected: list[str] = []
         retried = 0
+        sample_counter = 0  # run-wide, so per-sample seeds never repeat
         total_in_tok = 0
         total_out_tok = 0
         total_cost = 0.0
@@ -192,8 +193,16 @@ Return ONLY the JSON object."""
 
             for sample_idx in range(samples_per_location):
                 temperature = 1.0 if sample_idx > 0 else 0.2
+                # A seeded config sends the same seed with the same prompt every
+                # time, which makes temperature-1 samples identical. Derive one
+                # seed per sample so a seeded run is reproducible AND still
+                # draws N different samples (tests/test_repair_seeds.py).
+                sample_llm = (
+                    llm if llm.seed is None else replace(llm, seed=llm.seed * 1000 + sample_counter)
+                )
+                sample_counter += 1
                 resp = complete(
-                    llm,
+                    sample_llm,
                     [{"role": "user", "content": prompt}],
                     temperature=temperature,
                     max_tokens=SAMPLE_MAX_TOKENS,
@@ -211,7 +220,7 @@ Return ONLY the JSON object."""
                 # prompt that is unclear.
                 if resp.finish_reason == "length":
                     resp = complete(
-                        llm,
+                        sample_llm,
                         [{"role": "user", "content": prompt}],
                         temperature=temperature,
                         max_tokens=SAMPLE_MAX_TOKENS * 2,

@@ -1,0 +1,6 @@
+HEAD           : 1e25db3 (base)
+git remote -v  : (none)
+git log --all  :
+1e25db3 (grafted, HEAD) base
+
+git show origin/main:mod.py -> (unavailable)

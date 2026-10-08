@@ -1,0 +1,9 @@
+tests/test_grading_exact.py run against eval/harness.py at bfd20e8 (before the grading fix):
+  cap:       grade() returned True  (expected False) - P2P id #26 broken, only 20 ids run
+  substring: grade() returned False (expected True)  - -k test_value also ran unlisted failing test_value_legacy
+  missing:   grade() returned True  (expected False) - -k test_gone matched test_gone_helper
+FAILED tests/test_grading_exact.py::test_every_pass_to_pass_id_is_graded_not_just_the_first_20
+FAILED tests/test_grading_exact.py::test_bare_name_does_not_select_tests_that_merely_contain_it
+FAILED tests/test_grading_exact.py::test_missing_test_is_not_satisfied_by_a_similarly_named_one
+3 failed in 24.94s
+After fix (this commit): 4 passed in 31.96s
