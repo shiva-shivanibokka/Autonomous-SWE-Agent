@@ -399,9 +399,10 @@ money to run.
   need dependency pins a modern interpreter would not choose. `--setup` takes
   that command and records it with the run; there is no per-instance environment
   database.
-- **The agentless arm is recorded, but thinly.** The table above reports
-  Agentless 2 of 4 over the same four instances; what is missing is a published
-  end-to-end transcript of those runs, not the runs themselves.
+- **The agentless arm is recorded on four instances only.** The table above
+  reports Agentless 2 of 4, with full end-to-end transcripts published under
+  `frontend/public/demo/*.agentless.json`. What does not exist is a run at
+  benchmark scale.
 - **Four instances is not a resolve rate.** Three of four resolved, but they were
   chosen for having environments that build on a modern interpreter, which is
   its own selection bias. Nothing here should be read as a score over 300.
