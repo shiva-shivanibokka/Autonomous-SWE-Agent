@@ -1,5 +1,14 @@
 # Autonomous SWE Agent
 
+> **Superseded by [CodePilot-SWE](https://github.com/shiva-shivanibokka/CodePilot-SWE).**
+> This was the first of two attempts at the same problem. CodePilot-SWE is the
+> one to read: it carries the benchmark harness, the per-instance run records
+> and the statistical analysis. What is worth seeing *here* is the side-by-side
+> agentic-vs-agentless comparison below, and the leakage reproduction in
+> `eval_sop/` — a re-runnable proof that the agent could previously read the
+> gold patch out of git history. The ideas that carried forward were ported, and
+> the port is documented in `codepilot/bench/agentless/localize.py` over there.
+
 Takes a GitHub issue, writes a patch inside an isolated workspace, and runs the
 repository's own tests against it — built two ways, an **agentic tool-use loop**
 and a **tool-free agentless pipeline**, so the same task can be run through both
@@ -134,7 +143,7 @@ Grounded in: [Anthropic's SWE-bench work](https://www.anthropic.com/engineering/
 | Two workspace backends: Docker sandbox, and local (no Docker) | No integration tests for the Docker backend (Docker-gated) |
 | BYOK across four providers through one client | |
 | Hard timeouts, per-task isolation, secret scanning on recordings | |
-| 93 unit tests, ruff clean, CI green | |
+| 105 unit tests, ruff clean, CI green | |
 
 Any resolve-rate figures you see referenced elsewhere (Anthropic's ~49%, Agentless'
 ~32%) belong to **those papers**, not to this system. Nothing here is extrapolated
@@ -363,7 +372,7 @@ Autonomous-SWE-Agent/
 │   │   └── InfoTip.tsx    # The "?" beside a figure
 │   ├── public/demo/       # The recordings: index.json + one file per run
 │   └── scripts/           # validate-run.mjs — fails the build on a bad recording
-└── tests/                 # 85 unit tests — mocked, no Docker/LLM/network
+└── tests/                 # 105 unit tests — mocked, no Docker/LLM/network
 ```
 
 ## Testing
@@ -390,8 +399,9 @@ money to run.
   need dependency pins a modern interpreter would not choose. `--setup` takes
   that command and records it with the run; there is no per-instance environment
   database.
-- **The agentless arm is unrecorded.** It runs, and its parts are tested, but no
-  captured end-to-end run of it is published yet.
+- **The agentless arm is recorded, but thinly.** The table above reports
+  Agentless 2 of 4 over the same four instances; what is missing is a published
+  end-to-end transcript of those runs, not the runs themselves.
 - **Four instances is not a resolve rate.** Three of four resolved, but they were
   chosen for having environments that build on a modern interpreter, which is
   its own selection bias. Nothing here should be read as a score over 300.
